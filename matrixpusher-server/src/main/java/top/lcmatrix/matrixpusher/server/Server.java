@@ -4,6 +4,7 @@ import java.net.InetAddress;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
@@ -29,25 +30,32 @@ public class Server {
 		ServerBootstrap serverBootstrap = new ServerBootstrap();
 		EventLoopGroup bossGroup = new NioEventLoopGroup(1);
 		EventLoopGroup workerGroup = new NioEventLoopGroup();
-		serverBootstrap.group(bossGroup, workerGroup)
-			.channel(NioServerSocketChannel.class)
-			.childHandler(new ChannelInitializer<Channel>() {
+		try {
+			serverBootstrap.group(bossGroup, workerGroup)
+				.channel(NioServerSocketChannel.class)
+				.childHandler(new ChannelInitializer<Channel>() {
 
-				@Override
-				protected void initChannel(Channel ch) throws Exception {
-					ch.pipeline()
-						.addLast(new LengthedStringDecoder())
-						.addLast(new LengthedStringEncoder())
-						.addLast(new JsonDecoder())
-						.addLast(new JsonEncoder())
-						.addLast(new HeartbeatHandler())
-						.addLast(new CmdHandler())
-						.addLast(new P2PMsgHandler());
-				}
-			})
-			.option(ChannelOption.SO_BACKLOG, ServerConfigs.SO_BACKLOG)
-			.childOption(ChannelOption.SO_KEEPALIVE, true);
-		serverBootstrap.bind(port).sync();
+					@Override
+					protected void initChannel(Channel ch) throws Exception {
+						ch.pipeline()
+							.addLast(new LengthedStringDecoder())
+							.addLast(new LengthedStringEncoder())
+							.addLast(new JsonDecoder())
+							.addLast(new JsonEncoder())
+							.addLast(new HeartbeatHandler())
+							.addLast(new CmdHandler())
+							.addLast(new P2PMsgHandler());
+					}
+				})
+				.option(ChannelOption.SO_BACKLOG, ServerConfigs.SO_BACKLOG)
+				.childOption(ChannelOption.SO_KEEPALIVE, true);
+			ChannelFuture channelFuture = serverBootstrap.bind(port).sync();
+			System.out.println("已启动服务器，IP：" + getMyIp() + "，端口：" + ServerConfigs.PORT);
+			channelFuture.channel().closeFuture().sync();
+		} finally {
+			bossGroup.shutdownGracefully();
+			workerGroup.shutdownGracefully();
+		}
 	}
 	
 	private static String getMyIp() {
@@ -64,7 +72,6 @@ public class Server {
     {
     	try {
 			new Server(ServerConfigs.PORT).start();
-			System.out.println("已启动服务器，IP：" + getMyIp() + "，端口：" + ServerConfigs.PORT);
 		} catch (Exception e) {
 			System.out.println("启动服务器失败");
 			e.printStackTrace();

@@ -40,7 +40,8 @@ public class CmdHandler extends SimpleChannelInboundHandler<Command>{
 					}
 				});
 			}
-			//暂不验证token
+			//TODO 校验token
+			//checkToken(args[0], args[1]);
 			ClientCache.add(args[0], ctx);
 			channel.writeAndFlush(new CmdResult(cmd, true, "登录成功"));
 			break;
@@ -51,7 +52,8 @@ public class CmdHandler extends SimpleChannelInboundHandler<Command>{
 				channel.writeAndFlush(new CmdResult(cmd, false, "参数不正确"));
 				return;
 			}
-			//暂不验证token
+			//TODO 校验token
+			//checkToken(args[0], args[1]);
 			ClientCache.remove(args[0]);
 			channel.writeAndFlush(new CmdResult(cmd, true, "登出成功"));
 			break;
