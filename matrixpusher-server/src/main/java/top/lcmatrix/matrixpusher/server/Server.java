@@ -1,29 +1,26 @@
 package top.lcmatrix.matrixpusher.server;
 
-import java.net.InetAddress;
-
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import top.lcmatrix.matrixpusher.codecs.JsonDecoder;
-import top.lcmatrix.matrixpusher.codecs.JsonEncoder;
-import top.lcmatrix.matrixpusher.codecs.LengthedStringDecoder;
-import top.lcmatrix.matrixpusher.codecs.LengthedStringEncoder;
+import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
+import io.netty.handler.stream.ChunkedWriteHandler;
+import top.lcmatrix.matrixpusher.codecs.*;
 import top.lcmatrix.matrixpusher.server.handler.CmdHandler;
 import top.lcmatrix.matrixpusher.server.handler.HeartbeatHandler;
 import top.lcmatrix.matrixpusher.server.handler.P2PMsgHandler;
 
+import java.net.InetAddress;
+
 public class Server {
 	
-	private int port;
+	private ServerConfigs serverConfigs;
 	
-	public Server(int port) {
-		this.port = port;
+	public Server(ServerConfigs serverConfigs) {
+		this.serverConfigs = serverConfigs;
 	}
 	
 	public void start() throws InterruptedException {
@@ -37,20 +34,37 @@ public class Server {
 
 					@Override
 					protected void initChannel(Channel ch) throws Exception {
-						ch.pipeline()
-							.addLast(new LengthedStringDecoder())
-							.addLast(new LengthedStringEncoder())
-							.addLast(new JsonDecoder())
+						ChannelPipeline pipeline = ch.pipeline();
+						if(serverConfigs instanceof WebSocketServerConfigs){
+							WebSocketServerConfigs webSocketServerConfigs = (WebSocketServerConfigs) serverConfigs;
+							pipeline.addLast(new HttpServerCodec())
+									.addLast(new ChunkedWriteHandler())
+									.addLast(new HttpObjectAggregator(webSocketServerConfigs.getMaxAggregateContentLength()))
+									.addLast(new TextWebSocketFrameDecoder())
+									.addLast(new TextWebSocketFrameEncoder())
+									.addLast(new WebSocketServerProtocolHandler(webSocketServerConfigs.getContextPath(),
+											null, true, webSocketServerConfigs.getMaxFrameSize()));
+						} else {
+							pipeline.addLast(new LengthedStringDecoder())
+									.addLast(new LengthedStringEncoder());
+						}
+						pipeline.addLast(new JsonDecoder())
 							.addLast(new JsonEncoder())
 							.addLast(new HeartbeatHandler())
 							.addLast(new CmdHandler())
 							.addLast(new P2PMsgHandler());
+						;
 					}
 				})
-				.option(ChannelOption.SO_BACKLOG, ServerConfigs.SO_BACKLOG)
+				.option(ChannelOption.SO_BACKLOG, serverConfigs.getSoBackLog())
 				.childOption(ChannelOption.SO_KEEPALIVE, true);
-			ChannelFuture channelFuture = serverBootstrap.bind(port).sync();
-			System.out.println("已启动服务器，IP：" + getMyIp() + "，端口：" + ServerConfigs.PORT);
+			ChannelFuture channelFuture = serverBootstrap.bind(serverConfigs.getPort()).sync();
+			if(serverConfigs instanceof WebSocketServerConfigs){
+				WebSocketServerConfigs webSocketServerConfigs = (WebSocketServerConfigs) serverConfigs;
+				System.out.println("已启动WebSocket服务器：ws://" + getMyIp() + ":" + serverConfigs.getPort() + webSocketServerConfigs.getContextPath());
+			} else {
+				System.out.println("已启动Socket服务器，IP：" + getMyIp() + ":" + serverConfigs.getPort());
+			}
 			channelFuture.channel().closeFuture().sync();
 		} finally {
 			bossGroup.shutdownGracefully();
@@ -68,10 +82,11 @@ public class Server {
         }
 	}
 	
-	public static void main( String[] args )
-    {
+	public static void main( String[] args ) {
+		//WebSocketServerConfigs serverConfigs = new WebSocketServerConfigs();
+		ServerConfigs serverConfigs = new ServerConfigs();
     	try {
-			new Server(ServerConfigs.PORT).start();
+			new Server(serverConfigs).start();
 		} catch (Exception e) {
 			System.out.println("启动服务器失败");
 			e.printStackTrace();
